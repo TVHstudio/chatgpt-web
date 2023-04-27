@@ -1,17 +1,20 @@
 import express from 'express'
 import { getAzureSubscriptionKey } from './middleware/get-speech-token'
+import cookieParser from 'cookie-parser'
 import type { RequestProps } from './types'
 import type { ChatMessage } from './chatgpt'
 import { chatConfig, chatReplyProcess, currentModel } from './chatgpt'
-import { auth } from './middleware/auth'
+import { auth, cookieName } from './middleware/auth'
 import { limiter } from './middleware/limiter'
 import { isNotEmptyString } from './utils/is'
+import { router as authRouter } from './auth'
 
 const app = express()
 const router = express.Router()
 
 app.use(express.static('public'))
 app.use(express.json())
+app.use(cookieParser())
 
 app.all('*', (_, res, next) => {
   res.header('Access-Control-Allow-Origin', '*')
@@ -58,9 +61,10 @@ router.post('/config', auth, async (req, res) => {
 
 router.post('/session', async (req, res) => {
   try {
+    const user = req.cookies[cookieName]
     const AUTH_SECRET_KEY = process.env.AUTH_SECRET_KEY
-    const hasAuth = isNotEmptyString(AUTH_SECRET_KEY)
-    res.send({ status: 'Success', message: '', data: { auth: hasAuth, model: currentModel() } })
+    const hasAuth = isNotEmptyString(AUTH_SECRET_KEY) // TODO: option for oauth
+    res.send({ status: 'Success', message: '', data: { auth: hasAuth, model: currentModel(), user } })
   }
   catch (error) {
     res.send({ status: 'Fail', message: error.message, data: null })
@@ -87,6 +91,8 @@ router.post('/get-azure-token', getAzureSubscriptionKey)
 
 app.use('', router)
 app.use('/api', router)
+app.use('/auth', authRouter)
 app.set('trust proxy', 1)
 
-app.listen(3002, () => globalThis.console.log('Server is running on port 3002'))
+const port = process.env.SERVICE_PORT || 3002
+app.listen(port, () => globalThis.console.log('Server is running on port', port))
